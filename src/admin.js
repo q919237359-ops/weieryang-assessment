@@ -206,10 +206,19 @@ function invitationsView() {
     ${latest?`<div class="invite-ready" role="status"><strong>邀请已生成</strong><p>复制下面的链接，发给一位候选人即可。</p><input class="input" aria-label="新生成的邀请链接" readonly value="${esc(latest.url)}"><button class="btn btn-primary" data-action="copy-invitation" data-token="${esc(latest.token)}">复制这个链接</button></div>`:''}
   </section><section class="results-panel"><div class="results-toolbar"><h2 class="invite-list-title">已生成的邀请</h2><span class="editor-help">${state.invitations.length} 份 · 复制不会生成新链接</span></div>${state.invitations.length?`<div class="invitation-list">${state.invitations.map(item=>{const status=invitationStatus(item);return `<article class="invitation-row"><div><strong>${esc(item.position||state.config.position)}</strong><p>创建于 ${fmtDate(item.created_at)} · 截止 ${fmtDate(item.expires_at)}</p><small>编号 ${esc(item.token.slice(0,8))} · 版本 ${esc(item.rubric_version||item.version||'')}</small></div><div class="invitation-actions"><span class="badge ${status.usable?'badge-pass':'badge-neutral'}">${status.label}</span>${status.usable?`<button class="btn btn-secondary" data-action="copy-invitation" data-token="${esc(item.token)}">复制链接</button><button class="btn btn-quiet" data-action="disable-invitation" data-token="${esc(item.token)}">停用</button>`:''}</div></article>`;}).join('')}</div>`:'<div class="admin-empty"><h3>还没有邀请链接</h3><p>在上方填写岗位，为第一位候选人生成邀请。</p></div>'}</section>`;
 }
-async function refreshInvitations(){const data=await api('/api/admin/invitations');state.invitations=data.invitations||[];}
+async function refreshInvitations(){
+  const data=await api('/api/admin/invitations');state.invitations=data.invitations||[];
+  if(state.latestInvitation){
+    const refreshed=state.invitations.find(item=>item.token===state.latestInvitation.token);
+    state.latestInvitation=refreshed&&invitationStatus(refreshed).usable?refreshed:null;
+  }
+}
 async function copyInvitation(token) {
+  await refreshInvitations();
   const item=state.invitations.find(item=>item.token===token)||(state.latestInvitation?.token===token?state.latestInvitation:null);
   if(!item)throw new Error('找不到这份邀请，请刷新后重试。');
+  const status=invitationStatus(item);
+  if(!status.usable){renderShell();throw new Error(`这份邀请${status.label}，请生成新的邀请链接。`);}
   const url=invitationURL(item);
   try{await navigator.clipboard.writeText(url);toast('专属邀请链接已复制，请只发给一位候选人。');}
   catch{window.prompt('复制下面的专属邀请链接：',url);}
@@ -279,6 +288,7 @@ app.addEventListener('click', async event => {
       if (state.tab === button.dataset.tab) return;
       if (state.dirty && !window.confirm('有尚未保存的测评设置。确定放弃修改并离开吗？')) return;
       state.dirty = false;
+      if(button.dataset.tab==='invitations')await refreshInvitations();
       state.tab = button.dataset.tab;
       renderShell();
       return;
@@ -289,8 +299,8 @@ app.addEventListener('click', async event => {
         button.disabled=true;document.querySelector('#auth-error').textContent='';
         try{await signInAdmin();await boot();}catch(error){const el=document.querySelector('#auth-error');if(el)el.textContent=error.message;else throw error;}finally{if(button.isConnected)button.disabled=false;}return;
       }
-      case 'open-invitations': state.tab='invitations';await refreshInvitations();renderShell();return;
-      case 'copy-invitation': return copyInvitation(button.dataset.token);
+      case 'open-invitations': await refreshInvitations();state.tab='invitations';renderShell();return;
+      case 'copy-invitation': return await copyInvitation(button.dataset.token);
       case 'refresh-invitations': button.disabled=true;await refreshInvitations();renderShell();return;
       case 'disable-invitation': {
         if(!window.confirm('停用这份邀请后，候选人将无法提交。确定停用吗？'))return;
