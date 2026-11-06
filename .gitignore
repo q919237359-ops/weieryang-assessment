@@ -1,0 +1,8 @@
+node_modules/
+dist/
+private/
+.firebase/
+.env*
+*.log
+.DS_Store
+coverage/
