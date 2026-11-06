@@ -8,5 +8,8 @@ export const firebaseConfig = Object.freeze({
   messagingSenderId: '1069316969726',
   appId: '1:1069316969726:web:437bc34dc09dc4c49541af'
 });
-export const ownerEmail = 'q919237359@gmail.com';
+export const ownerEmail = 'tangkelian@weieryang.com';
+// Filled only after the owner creates the Firebase password account. Empty denies all HR access.
+export const ownerUid = 'AuqV4Tza8Iakip9HoFZsl6MgRO43';
+
 export const namespace = 'weieryangInterview';

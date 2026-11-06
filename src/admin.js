@@ -1,11 +1,13 @@
 import { api, escapeHTML as esc, formatTime, formatDate, toast } from './common.js';
 import { createInvitation, downloadExport } from './firebase-api.js';
 import { signInAdmin, signOutAdmin } from './firebase-auth.js';
+import { ownerEmail } from './firebase-config.js';
 
 const app = document.querySelector('#admin-app');
 const dialog = document.querySelector('#detail-dialog');
 const state = { attempts: [], config: null, tab: 'results', query: '', filter: 'all', dirty: false, detail: null, invitations: [], latestInvitation: null };
 let lastFocus = null;
+let loginPending = false;
 const iconPaths = {
   list: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 12h8M8 17h5"/>',
   settings: '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>',
@@ -48,11 +50,47 @@ function renderAuth() {
     <section class="auth-card" aria-labelledby="auth-title">
       <p class="eyebrow">HR WORKSPACE</p><h1 id="auth-title">登录 HR 工作台</h1>
       <p>查看候选人答卷，管理测评题目与评分规则。</p>
-      <button class="btn btn-primary" type="button" data-action="login">使用 Google 账号登录</button><p class="error-message" id="auth-error" role="alert"></p>
+      <form id="admin-login-form" class="admin-login-form" method="post" aria-describedby="auth-note">
+        <label class="field"><span class="field-label">管理员邮箱</span><input class="input" type="email" name="email" autocomplete="username" spellcheck="false" autocapitalize="none" value="${esc(ownerEmail)}" required></label>
+        <label class="field"><span class="field-label">登录密码</span><input class="input" type="password" name="password" autocomplete="current-password" placeholder="请输入管理员密码" required></label>
+        <p class="error-message" id="auth-error" role="alert"></p>
+        <button class="btn btn-primary" type="submit">登录工作台</button>
+      </form>
     </section>
-    <p class="auth-note">仅授权的管理员账号可以管理测评。候选人使用专属链接答题，无需登录。</p>
+    <p class="auth-note" id="auth-note">仅指定的管理员账号可以管理测评。候选人使用专属链接答题，无需登录。</p>
     <a class="auth-home" href="./index.html">返回候选人测评入口</a>
   </main>`;
+}
+
+async function submitLogin(form) {
+  if(loginPending || !form.reportValidity()) return;
+  loginPending = true;
+  const emailInput = form.elements.namedItem('email');
+  const passwordInput = form.elements.namedItem('password');
+  const button = form.querySelector('button[type="submit"]');
+  const errorMessage = form.querySelector('#auth-error');
+  const email = emailInput.value.trim();
+  errorMessage.textContent = '';
+  form.setAttribute('aria-busy', 'true');
+  button.disabled = true;button.textContent = '正在登录…';
+  emailInput.disabled = true;passwordInput.disabled = true;
+  try {
+    const request = signInAdmin(email, passwordInput.value);
+    passwordInput.value = '';
+    await request;
+    await boot();
+  } catch(error) {
+    if(errorMessage.isConnected) errorMessage.textContent = error.message;
+  } finally {
+    passwordInput.value = '';
+    loginPending = false;
+    if(form.isConnected) {
+      form.removeAttribute('aria-busy');
+      emailInput.disabled = false;passwordInput.disabled = false;
+      button.disabled = false;button.textContent = '登录工作台';
+      if(errorMessage.textContent) passwordInput.focus();
+    }
+  }
 }
 
 function renderShell() {
@@ -295,10 +333,6 @@ app.addEventListener('click', async event => {
     }
     switch (button.dataset.action) {
       case 'retry': return boot();
-      case 'login': {
-        button.disabled=true;document.querySelector('#auth-error').textContent='';
-        try{await signInAdmin();await boot();}catch(error){const el=document.querySelector('#auth-error');if(el)el.textContent=error.message;else throw error;}finally{if(button.isConnected)button.disabled=false;}return;
-      }
       case 'open-invitations': await refreshInvitations();state.tab='invitations';renderShell();return;
       case 'copy-invitation': return await copyInvitation(button.dataset.token);
       case 'refresh-invitations': button.disabled=true;await refreshInvitations();renderShell();return;
@@ -353,6 +387,7 @@ app.addEventListener('change', event => {
 app.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target;
+  if(form.id==='admin-login-form'){await submitLogin(form);return;}
   if(form.id==='invitation-form'){
     if(!form.reportValidity())return;
     const button=form.querySelector('button[type="submit"]');button.disabled=true;button.textContent='正在生成…';
